@@ -151,9 +151,6 @@ void Java_amirz_pcaudio_MainActivity_createBufferQueueAudioPlayer(JNIEnv* env, j
 }
 
 void Java_amirz_pcaudio_MainActivity_playAudio(JNIEnv* env, jclass clazz, jfloatArray data, size_t count) {
-    //if (pthread_mutex_trylock(&audioEngineLock))
-        //return;
-
     void* nextBuffer = malloc(count);
     jboolean isCopy;
     jbyte* floats = (*env)->GetFloatArrayElements(env, data, &isCopy);
@@ -163,9 +160,8 @@ void Java_amirz_pcaudio_MainActivity_playAudio(JNIEnv* env, jclass clazz, jfloat
     pthread_mutex_lock(&audioEngineLock);
     currentBuffer = nextBuffer;
     SLresult result = (*bqPlayerBufferQueue)->Enqueue(bqPlayerBufferQueue, currentBuffer, count);
-    //if (SL_RESULT_SUCCESS != result) {
-        //pthread_mutex_unlock(&audioEngineLock);
-    //}
+    if (SL_RESULT_SUCCESS != result)
+        pthread_mutex_unlock(&audioEngineLock);
 }
 
 // shut down the native audio system
