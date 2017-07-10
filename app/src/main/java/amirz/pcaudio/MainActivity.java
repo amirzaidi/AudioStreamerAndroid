@@ -1,8 +1,11 @@
 package amirz.pcaudio;
 
 import android.app.Activity;
+import android.content.Context;
+import android.media.AudioManager;
 import android.os.Bundle;
 import android.os.Handler;
+import android.util.Log;
 import android.widget.TextView;
 
 import java.io.IOException;
@@ -57,8 +60,12 @@ public class MainActivity extends Activity {
                     try {
                         InputStream in = client.getInputStream();
 
-                        float[] floats = new float[64 * 1024];
-                        byte[] bytes = new byte[floats.length * 4];
+                        AudioManager myAudioMgr = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+                        int bufSize = Integer.parseInt(myAudioMgr.getProperty(AudioManager.PROPERTY_OUTPUT_FRAMES_PER_BUFFER));
+                        Log.d("BufSize", bufSize + "");
+
+                        float[] floats = new float[bufSize];
+                        byte[] bytes = new byte[bufSize * 4];
                         int i;
                         while((i = in.read(bytes, 0, bytes.length)) != -1) {
                             ByteBuffer.wrap(bytes).asFloatBuffer().get(floats);
