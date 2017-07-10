@@ -14,6 +14,8 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.ByteBuffer;
 
+import static java.lang.Thread.MAX_PRIORITY;
+
 public class MainActivity extends Activity {
 
     private TextView serverStatus;
@@ -33,6 +35,7 @@ public class MainActivity extends Activity {
         createBufferQueueAudioPlayer();
 
         Thread fst = new Thread(new ServerThread());
+        fst.setPriority(MAX_PRIORITY);
         fst.start();
     }
 
@@ -61,12 +64,13 @@ public class MainActivity extends Activity {
                         InputStream in = client.getInputStream();
 
                         AudioManager myAudioMgr = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-                        int bufSize = Integer.parseInt(myAudioMgr.getProperty(AudioManager.PROPERTY_OUTPUT_FRAMES_PER_BUFFER));
+                        int bufSize = Integer.parseInt(myAudioMgr.getProperty(AudioManager.PROPERTY_OUTPUT_FRAMES_PER_BUFFER)) * 2;
                         Log.d("BufSize", bufSize + "");
 
                         float[] floats = new float[bufSize];
                         byte[] bytes = new byte[bufSize * 4];
                         int i;
+                        setTopPriority();
                         while((i = in.read(bytes, 0, bytes.length)) != -1) {
                             ByteBuffer.wrap(bytes).asFloatBuffer().get(floats);
                             if (i != 0)
@@ -103,6 +107,7 @@ public class MainActivity extends Activity {
     /** Native methods, implemented in jni folder */
     public static native void createEngine();
     public static native void createBufferQueueAudioPlayer();
+    public static native void setTopPriority();
     public static native void playAudio(float[] data, int count);
     public static native void shutdown();
 

@@ -20,6 +20,7 @@
 #include <string.h>
 #include <semaphore.h>
 #include <time.h>
+#include <pthread.h>
 
 // for __android_log_print(ANDROID_LOG_INFO, "YourApp", "formatted message");
 #include <android/log.h>
@@ -43,10 +44,10 @@ static SLVolumeItf bqPlayerVolume;
 
 static jboolean isCopy;
 
-#define WAITMS 15
+#define WAITMS 20
 static sem_t waiter;
-#define BUFCOUNT 6
-static uint8_t buf[BUFCOUNT][2 * 1024];
+#define BUFCOUNT 12
+static uint8_t buf[BUFCOUNT][4 * 1024];
 static uint8_t index = UINT8_MAX;
 
 // create the engine and output mix objects
@@ -77,6 +78,20 @@ void Java_amirz_pcaudio_MainActivity_createEngine(JNIEnv* env, jclass clazz)
     assert(SL_RESULT_SUCCESS == result);
 }
 
+void Java_amirz_pcaudio_MainActivity_setTopPriority(JNIEnv* env, jclass clazz) {
+    struct sched_param param;
+    int policy = 0;
+    pthread_attr_t attr;
+
+    pthread_t thId = pthread_self();
+    pthread_attr_init(&attr);
+    pthread_attr_getschedpolicy(&attr, &policy);
+    pthread_attr_getschedparam(&attr, &param);
+    param.sched_priority = sched_get_priority_max(policy);
+    pthread_setschedparam(thId, policy, &param);
+    pthread_attr_destroy(&attr);
+}
+
 void Java_amirz_pcaudio_MainActivity_playAudio(JNIEnv* env, jclass clazz, jfloatArray data, size_t count) {
     struct timespec ts;
     assert(clock_gettime(CLOCK_REALTIME, &ts) != -1);
@@ -101,8 +116,7 @@ void bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context) {
 }
 
 // create buffer queue audio player
-void Java_amirz_pcaudio_MainActivity_createBufferQueueAudioPlayer(JNIEnv* env, jclass clazz)
-{
+void Java_amirz_pcaudio_MainActivity_createBufferQueueAudioPlayer(JNIEnv* env, jclass clazz) {
     SLresult result;
 
     // configure audio source
