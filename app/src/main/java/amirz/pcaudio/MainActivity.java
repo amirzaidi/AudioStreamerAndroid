@@ -1,16 +1,22 @@
 package amirz.pcaudio;
 
 import android.app.Activity;
+import android.content.Context;
+import android.content.res.AssetManager;
 import android.media.AudioAttributes;
 import android.media.AudioFormat;
 import android.media.AudioManager;
 import android.media.AudioTrack;
 import android.os.Bundle;
 import android.os.Handler;
+import android.util.Log;
 import android.widget.TextView;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.ByteBuffer;
@@ -29,6 +35,9 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         serverStatus = findViewById(R.id.server_status);
+
+        createEngine();
+        createBufferQueueAudioPlayer();
 
         Thread fst = new Thread(new ServerThread());
         fst.start();
@@ -56,42 +65,16 @@ public class MainActivity extends Activity {
                     client.setTcpNoDelay(true);
 
                     try {
-                        int sampleRate = 192000;
-                        int channels = AudioFormat.CHANNEL_OUT_STEREO;
-                        int format = AudioFormat.ENCODING_PCM_FLOAT;
-
-                        AudioTrack audioTrack = new AudioTrack.Builder()
-                                .setAudioAttributes(new AudioAttributes.Builder()
-                                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                                        .build())
-                                .setAudioFormat(new AudioFormat.Builder()
-                                        .setSampleRate(sampleRate)
-                                        .setEncoding(format)
-                                        .build())
-                                .setBufferSizeInBytes(AudioTrack.getMinBufferSize(sampleRate, channels, format))
-                                .setTransferMode(AudioTrack.MODE_STREAM)
-                                .setSessionId(AudioManager.AUDIO_SESSION_ID_GENERATE)
-                                .build();
-
                         InputStream in = client.getInputStream();
 
-                        int buffSize = 512;
-                        byte[] bytes = new byte[buffSize];
-                        float[] f = new float[buffSize / 4];
+                        float[] floats = new float[64 * 1024];
+                        byte[] bytes = new byte[floats.length * 4];
                         int i;
-
-                        audioTrack.play();
-                        while((i = in.read(bytes, 0, buffSize)) != -1) {
-                            ByteBuffer.wrap(bytes).asFloatBuffer().get(f);
-                            for (int j = 0; j < f.length; j++) {
-                                if (f[j] > 1 || f[j] < -1) {
-                                    f[j] = 0;
-                                }
-                            }
-                            audioTrack.write(f, 0, i / 4, AudioTrack.WRITE_BLOCKING);
+                        while((i = in.read(bytes, 0, bytes.length)) != -1) {
+                            ByteBuffer.wrap(bytes).asFloatBuffer().get(floats);
+                            if (i != 0)
+                                playAudio(floats, i);
                         }
-                        audioTrack.stop();
                     } catch (Exception e) {
                         e.printStackTrace();
                     }
@@ -117,5 +100,17 @@ public class MainActivity extends Activity {
         } catch (IOException e) {
             e.printStackTrace();
         }
+        shutdown();
+    }
+
+    /** Native methods, implemented in jni folder */
+    public static native void createEngine();
+    public static native void createBufferQueueAudioPlayer();
+    public static native void playAudio(float[] data, int count);
+    public static native void shutdown();
+
+    /** Load jni .so on initialization */
+    static {
+        System.loadLibrary("native-audio-jni");
     }
 }
