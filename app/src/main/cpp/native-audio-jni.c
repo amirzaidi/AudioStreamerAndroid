@@ -49,8 +49,8 @@ static SLVolumeItf bqPlayerVolume;
 static jboolean isCopy;
 
 static sem_t waiter;
-#define BUFCOUNT 8
-static uint8_t buf[BUFCOUNT][1024];
+#define BUFCOUNT 16
+static uint8_t buf[BUFCOUNT][2 * 1024];
 static uint8_t index = UINT8_MAX;
 
 // create the engine and output mix objects
