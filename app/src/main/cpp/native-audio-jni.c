@@ -15,16 +15,11 @@
  *
  */
 
-/* This is a JNI example where we use native methods to play sounds
- * using OpenSL ES. See the corresponding Java source file located at:
- *
- *   src/com/example/nativeaudio/NativeAudio/NativeAudio.java
- */
-
 #include <assert.h>
 #include <jni.h>
 #include <string.h>
 #include <semaphore.h>
+#include <time.h>
 
 // for __android_log_print(ANDROID_LOG_INFO, "YourApp", "formatted message");
 #include <android/log.h>
@@ -48,8 +43,9 @@ static SLVolumeItf bqPlayerVolume;
 
 static jboolean isCopy;
 
+#define WAITMS 15
 static sem_t waiter;
-#define BUFCOUNT 16
+#define BUFCOUNT 6
 static uint8_t buf[BUFCOUNT][2 * 1024];
 static uint8_t index = UINT8_MAX;
 
@@ -61,41 +57,41 @@ void Java_amirz_pcaudio_MainActivity_createEngine(JNIEnv* env, jclass clazz)
     // create engine
     result = slCreateEngine(&engineObject, 0, NULL, 0, NULL, NULL);
     assert(SL_RESULT_SUCCESS == result);
-    (void)result;
 
     // realize the engine
     result = (*engineObject)->Realize(engineObject, SL_BOOLEAN_FALSE);
     assert(SL_RESULT_SUCCESS == result);
-    (void)result;
 
     // get the engine interface, which is needed in order to create other objects
     result = (*engineObject)->GetInterface(engineObject, SL_IID_ENGINE, &engineEngine);
     assert(SL_RESULT_SUCCESS == result);
-    (void)result;
 
     // create output mix, with environmental reverb specified as a non-required interface
     const SLInterfaceID ids[1] = {SL_IID_ENVIRONMENTALREVERB};
     const SLboolean req[1] = {SL_BOOLEAN_FALSE};
     result = (*engineEngine)->CreateOutputMix(engineEngine, &outputMixObject, 1, ids, req);
     assert(SL_RESULT_SUCCESS == result);
-    (void)result;
 
     // realize the output mix
     result = (*outputMixObject)->Realize(outputMixObject, SL_BOOLEAN_FALSE);
     assert(SL_RESULT_SUCCESS == result);
-    (void)result;
 }
 
 void Java_amirz_pcaudio_MainActivity_playAudio(JNIEnv* env, jclass clazz, jfloatArray data, size_t count) {
+    struct timespec ts;
+    assert(clock_gettime(CLOCK_REALTIME, &ts) != -1);
+    ts.tv_nsec += WAITMS * 1000000; //prevents getting behind too far
+
     SLresult result;
     index = ++index % BUFCOUNT;
 
     jbyte* floats = (*env)->GetFloatArrayElements(env, data, &isCopy);
     memcpy(buf[index], floats, count);
 
-    sem_wait(&waiter);
-    result = (*bqPlayerBufferQueue)->Enqueue(bqPlayerBufferQueue, buf[index], count);
-    assert(SL_RESULT_SUCCESS == result);
+    if (sem_timedwait(&waiter, &ts) == 0) {
+        result = (*bqPlayerBufferQueue)->Enqueue(bqPlayerBufferQueue, buf[index], count);
+        assert(SL_RESULT_SUCCESS == result);
+    }
 
     (*env)->ReleaseFloatArrayElements(env, data, floats, JNI_ABORT);
 }
@@ -132,37 +128,30 @@ void Java_amirz_pcaudio_MainActivity_createBufferQueueAudioPlayer(JNIEnv* env, j
 
     result = (*engineEngine)->CreateAudioPlayer(engineEngine, &bqPlayerObject, &audioSrc, &audioSnk, 2, ids, req);
     assert(SL_RESULT_SUCCESS == result);
-    (void)result;
 
     // realize the player
     result = (*bqPlayerObject)->Realize(bqPlayerObject, SL_BOOLEAN_FALSE);
     assert(SL_RESULT_SUCCESS == result);
-    (void)result;
 
     // get the play interface
     result = (*bqPlayerObject)->GetInterface(bqPlayerObject, SL_IID_PLAY, &bqPlayerPlay);
     assert(SL_RESULT_SUCCESS == result);
-    (void)result;
 
     // get the buffer queue interface
     result = (*bqPlayerObject)->GetInterface(bqPlayerObject, SL_IID_BUFFERQUEUE, &bqPlayerBufferQueue);
     assert(SL_RESULT_SUCCESS == result);
-    (void)result;
 
     // register callback on the buffer queue
     result = (*bqPlayerBufferQueue)->RegisterCallback(bqPlayerBufferQueue, bqPlayerCallback, NULL);
     assert(SL_RESULT_SUCCESS == result);
-    (void)result;
 
     // get the volume interface
     result = (*bqPlayerObject)->GetInterface(bqPlayerObject, SL_IID_VOLUME, &bqPlayerVolume);
     assert(SL_RESULT_SUCCESS == result);
-    (void)result;
 
     // set the player's state to playing
     result = (*bqPlayerPlay)->SetPlayState(bqPlayerPlay, SL_PLAYSTATE_PLAYING);
     assert(SL_RESULT_SUCCESS == result);
-    (void)result;
 
     sem_init(&waiter, 0, BUFCOUNT);
 }
