@@ -18,21 +18,19 @@ import static java.lang.Thread.MAX_PRIORITY;
 
 public class MainActivity extends Activity {
 
-    private TextView serverStatus;
+    private TextView status;
     public static final int SERVERPORT = 1420;
 
     private Handler handler = new Handler();
 
     private ServerSocket serverSocket;
+    private int framesPerBuffer;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        serverStatus = findViewById(R.id.server_status);
-
-        createEngine();
-        createBufferQueueAudioPlayer();
+        status = findViewById(R.id.server_status);
 
         Thread fst = new Thread(new ServerThread());
         fst.setPriority(MAX_PRIORITY);
@@ -46,7 +44,7 @@ public class MainActivity extends Activity {
                 handler.post(new Runnable() {
                     @Override
                     public void run() {
-                        serverStatus.setText("Waiting on 1420");
+                        status.setText("Waiting for first connection..");
                     }
                 });
                 while (true) {
@@ -54,36 +52,48 @@ public class MainActivity extends Activity {
                     handler.post(new Runnable() {
                         @Override
                         public void run() {
-                            serverStatus.setText("Connected");
+                            status.setText("");
                         }
                     });
 
                     client.setTcpNoDelay(true);
 
+                    AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+                    framesPerBuffer = Integer.parseInt(audioManager.getProperty(AudioManager.PROPERTY_OUTPUT_FRAMES_PER_BUFFER)) * 2;
+                    Log.d("framesPerBuffer", framesPerBuffer + "");
+
+                    start(32, framesPerBuffer * 4);
+
                     try {
                         InputStream in = client.getInputStream();
 
-                        AudioManager myAudioMgr = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-                        int bufSize = Integer.parseInt(myAudioMgr.getProperty(AudioManager.PROPERTY_OUTPUT_FRAMES_PER_BUFFER)) * 2;
-                        Log.d("BufSize", bufSize + "");
+                        float[] floats = new float[framesPerBuffer];
+                        byte[] bytes = new byte[framesPerBuffer * 4];
+                        int i = 0;
 
-                        float[] floats = new float[bufSize];
-                        byte[] bytes = new byte[bufSize * 4];
-                        int i;
-                        setTopPriority();
-                        while((i = in.read(bytes, 0, bytes.length)) != -1) {
-                            ByteBuffer.wrap(bytes).asFloatBuffer().get(floats);
-                            if (i != 0)
-                                playAudio(floats, i);
+                        while (true) {
+                            int newRead = in.read(bytes, i, bytes.length - i);
+                            if (newRead == -1) {
+                                break;
+                            } else if (newRead != 0) {
+                                i += newRead;
+                                if (i == bytes.length) {
+                                    ByteBuffer.wrap(bytes).asFloatBuffer().get(floats);
+                                    playAudio(floats, framesPerBuffer * 4);
+                                    i = 0;
+                                }
+                            }
                         }
                     } catch (Exception e) {
                         e.printStackTrace();
                     }
 
+                    shutdown();
+
                     handler.post(new Runnable() {
                         @Override
                         public void run() {
-                            serverStatus.setText("Disconnected");
+                            status.setText("Disconnected");
                         }
                     });
                 }
@@ -101,13 +111,10 @@ public class MainActivity extends Activity {
         } catch (IOException e) {
             e.printStackTrace();
         }
-        shutdown();
     }
 
     /** Native methods, implemented in jni folder */
-    public static native void createEngine();
-    public static native void createBufferQueueAudioPlayer();
-    public static native void setTopPriority();
+    public static native void start(int bufCount, int bufSize);
     public static native void playAudio(float[] data, int count);
     public static native void shutdown();
 

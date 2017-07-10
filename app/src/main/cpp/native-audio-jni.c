@@ -19,7 +19,6 @@
 #include <jni.h>
 #include <string.h>
 #include <semaphore.h>
-#include <time.h>
 #include <pthread.h>
 
 // for __android_log_print(ANDROID_LOG_INFO, "YourApp", "formatted message");
@@ -44,15 +43,37 @@ static SLVolumeItf bqPlayerVolume;
 
 static jboolean isCopy;
 
-#define WAITMS 20
 static sem_t waiter;
-#define BUFCOUNT 12
-static uint8_t buf[BUFCOUNT][4 * 1024];
-static uint8_t index = UINT8_MAX;
+static uint8_t mBufCount;
+static int mBufSize;
+static uint8_t *buf;
+static uint8_t lastIndex = UINT8_MAX;
 
-// create the engine and output mix objects
-void Java_amirz_pcaudio_MainActivity_createEngine(JNIEnv* env, jclass clazz)
-{
+void Java_amirz_pcaudio_MainActivity_playAudio(JNIEnv* env, jclass clazz, jfloatArray data, size_t count) {
+    SLresult result;
+    int index = (lastIndex + 1) % mBufCount;
+    uint8_t *useBuf = buf + index * mBufSize;
+
+    jfloat *floats = (*env)->GetFloatArrayElements(env, data, &isCopy);
+    memcpy(useBuf, floats, count);
+
+    if (sem_trywait(&waiter) == 0) {
+        result = (*bqPlayerBufferQueue)->Enqueue(bqPlayerBufferQueue, useBuf, count);
+        assert(SL_RESULT_SUCCESS == result);
+        lastIndex = index;
+    } else {
+        __android_log_print(ANDROID_LOG_DEBUG, "native-audio-jni", "frame drop at %i", index);
+    }
+
+    (*env)->ReleaseFloatArrayElements(env, data, floats, JNI_ABORT);
+}
+
+void bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context) {
+    sem_post(&waiter);
+}
+
+// create buffer queue audio player
+void Java_amirz_pcaudio_MainActivity_start(JNIEnv* env, jclass clazz, int bufCount, int bufSize) {
     SLresult result;
 
     // create engine
@@ -76,51 +97,9 @@ void Java_amirz_pcaudio_MainActivity_createEngine(JNIEnv* env, jclass clazz)
     // realize the output mix
     result = (*outputMixObject)->Realize(outputMixObject, SL_BOOLEAN_FALSE);
     assert(SL_RESULT_SUCCESS == result);
-}
-
-void Java_amirz_pcaudio_MainActivity_setTopPriority(JNIEnv* env, jclass clazz) {
-    struct sched_param param;
-    int policy = 0;
-    pthread_attr_t attr;
-
-    pthread_t thId = pthread_self();
-    pthread_attr_init(&attr);
-    pthread_attr_getschedpolicy(&attr, &policy);
-    pthread_attr_getschedparam(&attr, &param);
-    param.sched_priority = sched_get_priority_max(policy);
-    pthread_setschedparam(thId, policy, &param);
-    pthread_attr_destroy(&attr);
-}
-
-void Java_amirz_pcaudio_MainActivity_playAudio(JNIEnv* env, jclass clazz, jfloatArray data, size_t count) {
-    struct timespec ts;
-    assert(clock_gettime(CLOCK_REALTIME, &ts) != -1);
-    ts.tv_nsec += WAITMS * 1000000; //prevents getting behind too far
-
-    SLresult result;
-    index = ++index % BUFCOUNT;
-
-    jbyte* floats = (*env)->GetFloatArrayElements(env, data, &isCopy);
-    memcpy(buf[index], floats, count);
-
-    if (sem_timedwait(&waiter, &ts) == 0) {
-        result = (*bqPlayerBufferQueue)->Enqueue(bqPlayerBufferQueue, buf[index], count);
-        assert(SL_RESULT_SUCCESS == result);
-    }
-
-    (*env)->ReleaseFloatArrayElements(env, data, floats, JNI_ABORT);
-}
-
-void bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context) {
-    sem_post(&waiter);
-}
-
-// create buffer queue audio player
-void Java_amirz_pcaudio_MainActivity_createBufferQueueAudioPlayer(JNIEnv* env, jclass clazz) {
-    SLresult result;
 
     // configure audio source
-    SLDataLocator_AndroidSimpleBufferQueue loc_bufq = {SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE, BUFCOUNT};
+    SLDataLocator_AndroidSimpleBufferQueue loc_bufq = {SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE, bufCount};
 
     SLAndroidDataFormat_PCM_EX format_pcm;
     format_pcm.formatType = SL_ANDROID_DATAFORMAT_PCM_EX;
@@ -137,10 +116,10 @@ void Java_amirz_pcaudio_MainActivity_createBufferQueueAudioPlayer(JNIEnv* env, j
     SLDataLocator_OutputMix loc_outmix = {SL_DATALOCATOR_OUTPUTMIX, outputMixObject};
     SLDataSink audioSnk = {&loc_outmix, NULL};
 
-    const SLInterfaceID ids[3] = {SL_IID_BUFFERQUEUE, SL_IID_VOLUME};
-    const SLboolean req[3] = {SL_BOOLEAN_TRUE, SL_BOOLEAN_TRUE};
+    const SLInterfaceID ids2[3] = {SL_IID_BUFFERQUEUE, SL_IID_VOLUME};
+    const SLboolean req2[3] = {SL_BOOLEAN_TRUE, SL_BOOLEAN_TRUE};
 
-    result = (*engineEngine)->CreateAudioPlayer(engineEngine, &bqPlayerObject, &audioSrc, &audioSnk, 2, ids, req);
+    result = (*engineEngine)->CreateAudioPlayer(engineEngine, &bqPlayerObject, &audioSrc, &audioSnk, 2, ids2, req2);
     assert(SL_RESULT_SUCCESS == result);
 
     // realize the player
@@ -167,7 +146,24 @@ void Java_amirz_pcaudio_MainActivity_createBufferQueueAudioPlayer(JNIEnv* env, j
     result = (*bqPlayerPlay)->SetPlayState(bqPlayerPlay, SL_PLAYSTATE_PLAYING);
     assert(SL_RESULT_SUCCESS == result);
 
-    sem_init(&waiter, 0, BUFCOUNT);
+    sem_init(&waiter, 0, bufCount);
+
+    buf = malloc(bufCount * bufSize);
+    mBufCount = bufCount;
+    mBufSize = bufSize;
+
+    // set top priority for this thread
+    struct sched_param param;
+    int policy = 0;
+    pthread_attr_t attr;
+
+    pthread_t thId = pthread_self();
+    pthread_attr_init(&attr);
+    pthread_attr_getschedpolicy(&attr, &policy);
+    pthread_attr_getschedparam(&attr, &param);
+    param.sched_priority = sched_get_priority_max(policy);
+    pthread_setschedparam(thId, policy, &param);
+    pthread_attr_destroy(&attr);
 }
 
 // shut down the native audio system
