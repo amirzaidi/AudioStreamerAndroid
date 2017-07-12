@@ -5,7 +5,8 @@ import android.content.Context;
 import android.media.AudioManager;
 import android.os.Bundle;
 import android.os.Handler;
-import android.util.Log;
+import android.view.animation.AlphaAnimation;
+import android.widget.SeekBar;
 import android.widget.TextView;
 
 import java.io.IOException;
@@ -19,6 +20,8 @@ import static java.lang.Thread.MAX_PRIORITY;
 public class MainActivity extends Activity {
 
     private TextView status;
+    private SeekBar buffers;
+    private int bufCount;
     public static final int SERVERPORT = 1420;
 
     private Handler handler = new Handler();
@@ -26,11 +29,44 @@ public class MainActivity extends Activity {
     private ServerSocket serverSocket;
     private int framesPerBuffer;
 
+    private AlphaAnimation hide;
+    private AlphaAnimation show;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         status = findViewById(R.id.server_status);
+        buffers = findViewById(R.id.buffer_count);
+
+        AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        framesPerBuffer = Integer.parseInt(audioManager.getProperty(AudioManager.PROPERTY_OUTPUT_FRAMES_PER_BUFFER)) * 2;
+
+        buffers.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int i, boolean b) {
+                bufCount = ((Double)Math.pow(2, i + 1)).intValue();
+                status.setText(bufCount + " buffers (" + (1d / 48 * framesPerBuffer * bufCount) + " ms)");
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {
+            }
+        });
+        buffers.setMax(6);
+        buffers.setProgress(3);
+
+        hide = new AlphaAnimation(1f, 0f);
+        hide.setDuration(200);
+        hide.setFillAfter(true);
+
+        show = new AlphaAnimation(0f, 1f);
+        show.setDuration(200);
+        show.setFillAfter(true);
 
         Thread fst = new Thread(new ServerThread());
         fst.setPriority(MAX_PRIORITY);
@@ -41,29 +77,19 @@ public class MainActivity extends Activity {
         public void run() {
             try {
                 serverSocket = new ServerSocket(SERVERPORT);
-                handler.post(new Runnable() {
-                    @Override
-                    public void run() {
-                        status.setText("Waiting for first connection..");
-                    }
-                });
                 while (true) {
                     Socket client = serverSocket.accept();
                     handler.post(new Runnable() {
                         @Override
                         public void run() {
-                            status.setText("");
+                            buffers.setEnabled(false);
+                            status.startAnimation(hide);
+                            buffers.startAnimation(hide);
                         }
                     });
 
                     client.setTcpNoDelay(true);
-
-                    AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-                    framesPerBuffer = Integer.parseInt(audioManager.getProperty(AudioManager.PROPERTY_OUTPUT_FRAMES_PER_BUFFER)) * 2;
-                    Log.d("framesPerBuffer", framesPerBuffer + "");
-
-                    start(32, framesPerBuffer * 4);
-
+                    start(bufCount, framesPerBuffer * 4);
                     try {
                         InputStream in = client.getInputStream();
 
@@ -89,11 +115,12 @@ public class MainActivity extends Activity {
                     }
 
                     shutdown();
-
                     handler.post(new Runnable() {
                         @Override
                         public void run() {
-                            status.setText("Disconnected");
+                            status.startAnimation(show);
+                            buffers.startAnimation(show);
+                            buffers.setEnabled(true);
                         }
                     });
                 }
@@ -113,12 +140,10 @@ public class MainActivity extends Activity {
         }
     }
 
-    /** Native methods, implemented in jni folder */
     public static native void start(int bufCount, int bufSize);
     public static native void playAudio(float[] data, int count);
     public static native void shutdown();
 
-    /** Load jni .so on initialization */
     static {
         System.loadLibrary("native-audio-jni");
     }
