@@ -171,6 +171,8 @@ void Java_amirz_pcaudio_MainActivity_shutdown(JNIEnv* env, jclass clazz) {
 
     sem_destroy(&waiter);
 
+    free(buf);
+
     // destroy buffer queue audio player object, and invalidate all associated interfaces
     if (bqPlayerObject != NULL) {
         (*bqPlayerObject)->Destroy(bqPlayerObject);
