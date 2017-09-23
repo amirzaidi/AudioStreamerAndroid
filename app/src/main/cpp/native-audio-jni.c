@@ -73,7 +73,7 @@ void bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context) {
 }
 
 // create buffer queue audio player
-void Java_amirz_pcaudio_MainActivity_start(JNIEnv* env, jclass clazz, int bufCount, int bufSize) {
+void Java_amirz_pcaudio_MainActivity_start(JNIEnv* env, jclass clazz, int sampleRate, int bufCount, int bufSize) {
     SLresult result;
 
     // create engine
@@ -104,7 +104,7 @@ void Java_amirz_pcaudio_MainActivity_start(JNIEnv* env, jclass clazz, int bufCou
     SLAndroidDataFormat_PCM_EX format_pcm;
     format_pcm.formatType = SL_ANDROID_DATAFORMAT_PCM_EX;
     format_pcm.numChannels = 2;
-    format_pcm.sampleRate = SL_SAMPLINGRATE_48;
+    format_pcm.sampleRate = sampleRate * 1000;
     format_pcm.bitsPerSample = 32;
     format_pcm.containerSize = 32;
     format_pcm.channelMask = SL_SPEAKER_FRONT_LEFT | SL_SPEAKER_FRONT_RIGHT;

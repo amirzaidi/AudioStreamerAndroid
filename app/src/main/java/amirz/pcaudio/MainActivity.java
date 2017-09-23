@@ -12,6 +12,7 @@ import android.widget.TextView;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.ByteBuffer;
@@ -27,6 +28,7 @@ public class MainActivity extends Activity {
     private Handler handler = new Handler();
 
     private ServerSocket serverSocket;
+    private int sampleRate;
     private int framesPerBuffer;
 
     private AlphaAnimation hide;
@@ -37,6 +39,7 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
 
         AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        sampleRate = Integer.parseInt(audioManager.getProperty(AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE));
         framesPerBuffer = Integer.parseInt(audioManager.getProperty(AudioManager.PROPERTY_OUTPUT_FRAMES_PER_BUFFER)) * 2; //Stereo
 
         setContentView(R.layout.activity_main);
@@ -55,12 +58,12 @@ public class MainActivity extends Activity {
             @Override
             public void onProgressChanged(SeekBar seekBar, int i, boolean b) {
                 bufCount = ((Double)Math.pow(2, i + 1)).intValue();
-                String text = bufCount + " buffers (" + (1d / 48 * framesPerBuffer * bufCount) + " ms)";
+                String text = "Buffers: " + bufCount + " (" + (1000d / sampleRate * framesPerBuffer * bufCount) + " ms)\nSample rate: " + sampleRate + " Hz";
 
                 WifiManager wifiMgr = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
                 if (wifiMgr.isWifiEnabled()) {
                     int ip = wifiMgr.getConnectionInfo().getIpAddress();
-                    text += "\nWiFi IP Address: " + String.format("%d.%d.%d.%d",
+                    text += "\nWiFi IP: " + String.format("%d.%d.%d.%d",
                             (ip & 0xff),
                             (ip >> 8 & 0xff),
                             (ip >> 16 & 0xff),
@@ -107,9 +110,12 @@ public class MainActivity extends Activity {
                     });
 
                     client.setTcpNoDelay(true);
-                    start(bufCount, bytesPerBuffer);
+                    start(sampleRate, bufCount, bytesPerBuffer);
                     try {
                         InputStream in = client.getInputStream();
+                        OutputStream out = client.getOutputStream();
+                        out.write(1);
+                        out.flush();
 
                         float[] floats = new float[framesPerBuffer];
                         byte[] bytes = new byte[bytesPerBuffer];
@@ -156,7 +162,7 @@ public class MainActivity extends Activity {
         }
     }
 
-    public static native void start(int bufCount, int bufSize);
+    public static native void start(int sampleRate, int bufCount, int bufSize);
     public static native void playAudio(float[] data, int count);
     public static native void shutdown();
 
