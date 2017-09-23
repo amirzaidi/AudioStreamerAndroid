@@ -37,7 +37,7 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
 
         AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-        framesPerBuffer = Integer.parseInt(audioManager.getProperty(AudioManager.PROPERTY_OUTPUT_FRAMES_PER_BUFFER)) * 2;
+        framesPerBuffer = Integer.parseInt(audioManager.getProperty(AudioManager.PROPERTY_OUTPUT_FRAMES_PER_BUFFER)) * 2; //Stereo
 
         setContentView(R.layout.activity_main);
 
@@ -95,8 +95,9 @@ public class MainActivity extends Activity {
     public class ServerThread implements Runnable {
         public void run() {
             try {
+                int bytesPerBuffer = framesPerBuffer * 4; //4 bytes per 32-bit float frame
                 serverSocket = new ServerSocket(1420);
-                while (true) {
+                while (!serverSocket.isClosed()) {
                     Socket client = serverSocket.accept();
                     handler.post(new Runnable() {
                         @Override
@@ -106,23 +107,23 @@ public class MainActivity extends Activity {
                     });
 
                     client.setTcpNoDelay(true);
-                    start(bufCount, framesPerBuffer * 4);
+                    start(bufCount, bytesPerBuffer);
                     try {
                         InputStream in = client.getInputStream();
 
                         float[] floats = new float[framesPerBuffer];
-                        byte[] bytes = new byte[framesPerBuffer * 4];
+                        byte[] bytes = new byte[bytesPerBuffer];
                         int i = 0;
 
                         while (true) {
                             int newRead = in.read(bytes, i, bytes.length - i);
-                            if (newRead == -1) {
+                            if (newRead == -1) { //Disconnected
                                 break;
                             } else if (newRead != 0) {
                                 i += newRead;
-                                if (i == bytes.length) {
-                                    ByteBuffer.wrap(bytes).asFloatBuffer().get(floats);
-                                    playAudio(floats, framesPerBuffer * 4);
+                                if (i == bytes.length) { //Byte array full, play and continue
+                                    ByteBuffer.wrap(bytes).asFloatBuffer().get(floats); //Convert to float, little-endian
+                                    playAudio(floats, bytesPerBuffer);
                                     i = 0;
                                 }
                             }
@@ -149,7 +150,7 @@ public class MainActivity extends Activity {
     protected void onDestroy() {
         super.onDestroy();
         try {
-            serverSocket.close();
+            serverSocket.close(); //Stop background thread
         } catch (IOException e) {
             e.printStackTrace();
         }
