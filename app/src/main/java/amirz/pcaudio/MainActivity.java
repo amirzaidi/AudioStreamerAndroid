@@ -3,6 +3,7 @@ package amirz.pcaudio;
 import android.app.Activity;
 import android.content.Context;
 import android.media.AudioManager;
+import android.net.wifi.WifiManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.view.animation.AlphaAnimation;
@@ -22,7 +23,6 @@ public class MainActivity extends Activity {
     private TextView status;
     private SeekBar buffers;
     private int bufCount;
-    public static final int SERVERPORT = 1420;
 
     private Handler handler = new Handler();
 
@@ -35,18 +35,39 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_main);
-        status = findViewById(R.id.server_status);
-        buffers = findViewById(R.id.buffer_count);
 
         AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
         framesPerBuffer = Integer.parseInt(audioManager.getProperty(AudioManager.PROPERTY_OUTPUT_FRAMES_PER_BUFFER)) * 2;
 
+        setContentView(R.layout.activity_main);
+
+        hide = new AlphaAnimation(1f, 0f);
+        hide.setDuration(200);
+        hide.setFillAfter(true);
+
+        show = new AlphaAnimation(0f, 1f);
+        show.setDuration(200);
+        show.setFillAfter(true);
+
+        status = findViewById(R.id.server_status);
+        buffers = findViewById(R.id.buffer_count);
         buffers.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int i, boolean b) {
                 bufCount = ((Double)Math.pow(2, i + 1)).intValue();
-                status.setText(bufCount + " buffers (" + (1d / 48 * framesPerBuffer * bufCount) + " ms)");
+                String text = bufCount + " buffers (" + (1d / 48 * framesPerBuffer * bufCount) + " ms)";
+
+                WifiManager wifiMgr = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
+                if (wifiMgr.isWifiEnabled()) {
+                    int ip = wifiMgr.getConnectionInfo().getIpAddress();
+                    text += "\nWiFi IP Address: " + String.format("%d.%d.%d.%d",
+                            (ip & 0xff),
+                            (ip >> 8 & 0xff),
+                            (ip >> 16 & 0xff),
+                            (ip >> 24 & 0xff));
+                }
+
+                status.setText(text);
             }
 
             @Override
@@ -60,31 +81,27 @@ public class MainActivity extends Activity {
         buffers.setMax(6);
         buffers.setProgress(3);
 
-        hide = new AlphaAnimation(1f, 0f);
-        hide.setDuration(200);
-        hide.setFillAfter(true);
-
-        show = new AlphaAnimation(0f, 1f);
-        show.setDuration(200);
-        show.setFillAfter(true);
-
         Thread fst = new Thread(new ServerThread());
         fst.setPriority(MAX_PRIORITY);
         fst.start();
     }
 
+    private void changeState(boolean stateShow) {
+        buffers.setEnabled(stateShow);
+        status.startAnimation(stateShow ? show : hide);
+        buffers.startAnimation(stateShow ? show : hide);
+    }
+
     public class ServerThread implements Runnable {
         public void run() {
             try {
-                serverSocket = new ServerSocket(SERVERPORT);
+                serverSocket = new ServerSocket(1420);
                 while (true) {
                     Socket client = serverSocket.accept();
                     handler.post(new Runnable() {
                         @Override
                         public void run() {
-                            buffers.setEnabled(false);
-                            status.startAnimation(hide);
-                            buffers.startAnimation(hide);
+                            changeState(false);
                         }
                     });
 
@@ -118,9 +135,7 @@ public class MainActivity extends Activity {
                     handler.post(new Runnable() {
                         @Override
                         public void run() {
-                            status.startAnimation(show);
-                            buffers.startAnimation(show);
-                            buffers.setEnabled(true);
+                            changeState(true);
                         }
                     });
                 }
