@@ -89,9 +89,9 @@ void Java_amirz_pcaudio_MainActivity_start(JNIEnv* env, jclass clazz, int bufCou
     assert(SL_RESULT_SUCCESS == result);
 
     // create output mix, with environmental reverb specified as a non-required interface
-    const SLInterfaceID ids[1] = {SL_IID_ENVIRONMENTALREVERB};
-    const SLboolean req[1] = {SL_BOOLEAN_FALSE};
-    result = (*engineEngine)->CreateOutputMix(engineEngine, &outputMixObject, 1, ids, req);
+    const SLInterfaceID ids[0] = {};
+    const SLboolean req[0] = {};
+    result = (*engineEngine)->CreateOutputMix(engineEngine, &outputMixObject, 0, ids, req);
     assert(SL_RESULT_SUCCESS == result);
 
     // realize the output mix
