@@ -2,6 +2,7 @@ package amirz.pcaudio;
 
 import android.app.Activity;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.media.AudioManager;
 import android.net.wifi.WifiManager;
 import android.os.Bundle;
@@ -18,8 +19,12 @@ import java.net.Socket;
 import java.nio.ByteBuffer;
 
 import static java.lang.Thread.MAX_PRIORITY;
+import static java.lang.Thread.MIN_PRIORITY;
 
 public class MainActivity extends Activity {
+
+    private static final String PREFS = "preferences";
+    private static final String PREFS_BUFFERS = "buffers";
 
     private TextView status;
     private SeekBar buffers;
@@ -31,8 +36,9 @@ public class MainActivity extends Activity {
     private int sampleRate;
     private int framesPerBuffer;
 
-    private AlphaAnimation hide;
-    private AlphaAnimation show;
+    private boolean stateShown = true;
+    private AlphaAnimation[] hide = new AlphaAnimation[2];
+    private AlphaAnimation[] show = new AlphaAnimation[2];
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -44,19 +50,27 @@ public class MainActivity extends Activity {
 
         setContentView(R.layout.activity_main);
 
-        hide = new AlphaAnimation(1f, 0f);
-        hide.setDuration(200);
-        hide.setFillAfter(true);
+        for (int i = 0; i < hide.length; i++) {
+            hide[i] = new AlphaAnimation(1f, 0f);
+            hide[i].setDuration(200);
+            hide[i].setFillAfter(true);
 
-        show = new AlphaAnimation(0f, 1f);
-        show.setDuration(200);
-        show.setFillAfter(true);
+            show[i] = new AlphaAnimation(0f, 1f);
+            show[i].setDuration(200);
+            show[i].setFillAfter(true);
+        }
 
+        final SharedPreferences settings = getSharedPreferences(PREFS, 0);
         status = findViewById(R.id.server_status);
         buffers = findViewById(R.id.buffer_count);
+        buffers.setProgress(settings.getInt(PREFS_BUFFERS, 3));
         buffers.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int i, boolean b) {
+                SharedPreferences.Editor editor = settings.edit();
+                editor.putInt(PREFS_BUFFERS, i);
+                editor.commit();
+
                 bufCount = ((Double)Math.pow(2, i + 1)).intValue();
                 String text = "Buffers: " + bufCount + " (" + (1000d / sampleRate * framesPerBuffer * bufCount) + " ms)\nSample rate: " + sampleRate + " Hz";
 
@@ -82,17 +96,23 @@ public class MainActivity extends Activity {
             }
         });
         buffers.setMax(6);
-        buffers.setProgress(3);
 
         Thread fst = new Thread(new ServerThread());
-        fst.setPriority(MAX_PRIORITY);
         fst.start();
+        fst.setPriority(MAX_PRIORITY);
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        changeState(stateShown);
     }
 
     private void changeState(boolean stateShow) {
+        status.startAnimation(stateShow ? show[0] : hide[0]);
+        buffers.startAnimation(stateShow ? show[1] : hide[1]);
         buffers.setEnabled(stateShow);
-        status.startAnimation(stateShow ? show : hide);
-        buffers.startAnimation(stateShow ? show : hide);
+        stateShown = stateShow;
     }
 
     public class ServerThread implements Runnable {
@@ -114,7 +134,9 @@ public class MainActivity extends Activity {
                     try {
                         InputStream in = client.getInputStream();
                         OutputStream out = client.getOutputStream();
-                        out.write(1);
+                        out.write(1);   //Connected
+                        out.write(sampleRate);
+                        out.write(sampleRate >> 8);
                         out.flush();
 
                         float[] floats = new float[framesPerBuffer];

@@ -21,7 +21,6 @@
 #include <semaphore.h>
 #include <pthread.h>
 
-// for __android_log_print(ANDROID_LOG_INFO, "YourApp", "formatted message");
 #include <android/log.h>
 
 // for native audio
@@ -57,18 +56,21 @@ void Java_amirz_pcaudio_MainActivity_playAudio(JNIEnv* env, jclass clazz, jfloat
     jfloat *floats = (*env)->GetFloatArrayElements(env, data, &isCopy);
     memcpy(useBuf, floats, count);
 
+    // Only enqueue when buffer slot is free
     if (sem_trywait(&waiter) == 0) {
         result = (*bqPlayerBufferQueue)->Enqueue(bqPlayerBufferQueue, useBuf, count);
         assert(SL_RESULT_SUCCESS == result);
         lastIndex = index;
     } else {
-        __android_log_print(ANDROID_LOG_DEBUG, "native-audio-jni", "frame drop at %i", index);
+        // No place free, drop buffer
+        __android_log_print(ANDROID_LOG_DEBUG, "native-audio-jni", "frame drop on buffer #%i", index);
     }
 
     (*env)->ReleaseFloatArrayElements(env, data, floats, JNI_ABORT);
 }
 
 void bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context) {
+    // Release one lock
     sem_post(&waiter);
 }
 
@@ -104,7 +106,7 @@ void Java_amirz_pcaudio_MainActivity_start(JNIEnv* env, jclass clazz, int sample
     SLAndroidDataFormat_PCM_EX format_pcm;
     format_pcm.formatType = SL_ANDROID_DATAFORMAT_PCM_EX;
     format_pcm.numChannels = 2;
-    format_pcm.sampleRate = sampleRate * 1000;
+    format_pcm.sampleRate = (SLuint32) sampleRate * 1000;
     format_pcm.bitsPerSample = 32;
     format_pcm.containerSize = 32;
     format_pcm.channelMask = SL_SPEAKER_FRONT_LEFT | SL_SPEAKER_FRONT_RIGHT;
@@ -168,9 +170,7 @@ void Java_amirz_pcaudio_MainActivity_start(JNIEnv* env, jclass clazz, int sample
 
 // shut down the native audio system
 void Java_amirz_pcaudio_MainActivity_shutdown(JNIEnv* env, jclass clazz) {
-
     sem_destroy(&waiter);
-
     free(buf);
 
     // destroy buffer queue audio player object, and invalidate all associated interfaces
