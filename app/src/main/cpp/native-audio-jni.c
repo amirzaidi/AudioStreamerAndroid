@@ -63,7 +63,7 @@ void Java_amirz_pcaudio_MainActivity_playAudio(JNIEnv* env, jclass clazz, jfloat
         lastIndex = index;
     } else {
         // No place free, drop buffer
-        __android_log_print(ANDROID_LOG_DEBUG, "native-audio-jni", "frame drop on buffer #%i", index);
+        //__android_log_print(ANDROID_LOG_DEBUG, "native-audio-jni", "frame drop on buffer #%i", index);
     }
 
     (*env)->ReleaseFloatArrayElements(env, data, floats, JNI_ABORT);
