@@ -112,6 +112,7 @@ public class MainActivity extends Activity {
         status.startAnimation(stateShow ? show[0] : hide[0]);
         buffers.startAnimation(stateShow ? show[1] : hide[1]);
         buffers.setEnabled(stateShow);
+        buffers.invalidate();
         stateShown = stateShow;
     }
 
@@ -137,6 +138,7 @@ public class MainActivity extends Activity {
                         out.write(1);   //Connected
                         out.write(sampleRate);
                         out.write(sampleRate >> 8);
+                        out.write(sampleRate >> 16);
                         out.flush();
 
                         float[] floats = new float[framesPerBuffer];
